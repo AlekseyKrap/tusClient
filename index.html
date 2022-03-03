@@ -17,7 +17,8 @@
         a.btn {
             margin-bottom: 2px;
         }
-        img{
+
+        img {
             cursor: pointer;
         }
 
@@ -45,7 +46,8 @@
         </div>
 
     </div>
-    <div class="upload-text-progress" id="js-upload-text-progress"></div>
+    <div id="js-upload-text-progress"></div>
+    <div id="js-upload-time-progress"></div>
     <hr/>
     <h3>Uploads</h3>
     <p id="upload-list">
@@ -55,20 +57,24 @@
 </div>
 <script src="dist/tus.js"></script>
 <script>
+    'use strict';
 
-
-
-    let upload          = null
+    let upload = null
     let uploadIsRunning = false
-    const toggleBtn       = document.querySelector('#toggle-btn')
-    const input           = document.querySelector('input[type=file]')
-    const progress        = document.querySelector('.progress')
-    const progressBar     = progress.querySelector('.bar')
-    const alertBox        = document.querySelector('#support-alert')
-    const uploadList      = document.querySelector('#upload-list')
-    const chunkInput      = document.querySelector('#chunksize')
-    const endpointInput   = document.querySelector('#endpoint')
-    const textProgress    = document.querySelector('#js-upload-text-progress')
+    const toggleBtn = document.querySelector('#toggle-btn')
+    const input = document.querySelector('input[type=file]')
+    const progress = document.querySelector('.progress')
+    const progressBar = progress.querySelector('.bar')
+    const alertBox = document.querySelector('#support-alert')
+    const uploadList = document.querySelector('#upload-list')
+    const chunkInput = document.querySelector('#chunksize')
+    const endpointInput = document.querySelector('#endpoint')
+    const textProgress = document.querySelector('#js-upload-text-progress');
+    const timeProgress = document.querySelector('#js-upload-time-progress');
+
+    let IntervalId = null;
+
+    let dateStart = 0;
 
     if (!tus.isSupported) {
         alertBox.classList.remove('hidden')
@@ -86,10 +92,12 @@
                 upload.abort()
                 toggleBtn.textContent = 'resume upload'
                 uploadIsRunning = false
+                clearInterval(IntervalId)
             } else {
                 upload.start()
                 toggleBtn.textContent = 'pause upload'
                 uploadIsRunning = true
+                dateStart = Date.now();
             }
         } else if (input.files.length > 0) {
             startUpload()
@@ -101,7 +109,7 @@
 
     input.addEventListener('change', startUpload)
 
-    function startUpload () {
+    function startUpload() {
         const file = input.files[0]
 
         if (!file) {
@@ -109,16 +117,18 @@
         }
 
         toggleBtn.textContent = 'pause upload'
-
+        dateStart = Date.now();
+        const chunkSize = 2097152;
         const options = {
-            endpoint   : 'https://tusd.tusdemo.net/files/',
+            endpoint: 'https://tusd.tusdemo.net/files/',
             retryDelays: [0, 1000, 3000],
-            chunkSize: '2097152',
-            metadata   : {
+            chunkSize,
+            metadata: {
                 filename: file.name,
                 filetype: file.type,
             },
-            onError (error) {
+            onError(error) {
+                clearInterval(IntervalId);
                 if (error.originalRequest) {
                     if (window.confirm(`Failed because: ${error}\nDo you want to retry?`)) {
                         upload.start()
@@ -131,24 +141,55 @@
 
                 reset()
             },
-            onProgress (bytesUploaded, bytesTotal) {
+            onProgress(bytesUploaded, bytesTotal) {
                 const percentage = (bytesUploaded / bytesTotal * 100).toFixed(2)
                 progressBar.style.width = `${percentage}%`
                 console.log(bytesUploaded, bytesTotal, `${percentage}%`)
-                textProgress.textContent = `Uploaded ${formatBytes(bytesUploaded)} of ${formatBytes(bytesTotal)} (${percentage}%)`
+                textProgress.textContent = `Uploaded ${formatBytes(bytesUploaded)} of ${formatBytes(bytesTotal)} (${percentage}%)`;
+
             },
-            onSuccess () {
+            onChunkComplete(chunkSize, bytesAccepted, bytesTotal) {
+
+                clearInterval(IntervalId)
+                console.log({chunkSize, bytesAccepted, bytesTotal})
+
+                const currentTime =  Date.now();
+                let timeLastUploadChunk = currentTime - dateStart;
+
+                const bytesLeft = bytesTotal - bytesAccepted;
+                const chunksLeft = bytesLeft / chunkSize;
+
+                const renderProgress = ()=>{
+                    const currentChunkUploadedTime = Date.now() - currentTime;
+                    if(currentChunkUploadedTime >  timeLastUploadChunk){
+                        timeLastUploadChunk = timeLastUploadChunk * 1.5;
+                    }
+                    const timeLeft = chunksLeft * timeLastUploadChunk;
+                    const timeEnd = currentTime + timeLeft;
+                    const  diffTime = timeEnd - Date.now();
+
+                    timeProgress.textContent = `${((diffTime) / 1000 / 60).toFixed(2)} min left`;
+                }
+                renderProgress();
+
+
+                IntervalId = setInterval(renderProgress, 10 * 1000)
+
+                dateStart = Date.now();
+
+            },
+            onSuccess() {
                 const anchor = document.createElement('a')
                 anchor.textContent = `Download ${upload.file.name} (${upload.file.size} bytes)`
                 anchor.href = upload.url
                 anchor.className = 'btn btn-success'
                 uploadList.appendChild(anchor)
-
                 reset()
             },
         }
 
         upload = new tus.Upload(file, options)
+        console.log({upload})
         upload.findPreviousUploads().then((previousUploads) => {
             askToResumeUpload(previousUploads, upload)
 
@@ -162,9 +203,10 @@
         toggleBtn.textContent = "start upload";
         upload = null;
         uploadIsRunning = false;
+        clearInterval(IntervalId)
     }
 
-    function askToResumeUpload (previousUploads, upload) {
+    function askToResumeUpload(previousUploads, upload) {
         if (previousUploads.length === 0) return
 
         let text = 'You tried to upload this file previously at these times:\n\n'
@@ -180,7 +222,8 @@
             upload.resumeFromPreviousUpload(previousUploads[index])
         }
     }
-    function formatBytes (bytes, decimals = 2) {
+
+    function formatBytes(bytes, decimals = 2) {
         if (bytes === 0) return '0 Bytes'
 
         const k = 1024
