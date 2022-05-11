@@ -48,6 +48,8 @@
     </div>
     <div id="js-upload-text-progress"></div>
     <div id="js-upload-time-progress"></div>
+
+    <p>server: <span id="endpoint"></span></p>
     <hr/>
     <h3>Uploads</h3>
     <p id="upload-list">
@@ -109,6 +111,11 @@
 
     input.addEventListener('change', startUpload)
 
+    const endpoint = 'https://api.fanter.com/uploads/?token=c982c27ffe84526a9243898b4da011b84595bb6b';
+
+    const $endpoint = document.getElementById('endpoint');
+    $endpoint.innerText = endpoint;
+
     function startUpload() {
         const file = input.files[0]
 
@@ -119,8 +126,10 @@
         toggleBtn.textContent = 'pause upload'
         dateStart = Date.now();
         const chunkSize = 2097152;
+
+
         const options = {
-            endpoint: 'https://api.fanter.com/uploads/?token=c982c27ffe84526a9243898b4da011b84595bb6b',
+            endpoint: endpoint,
             retryDelays: [0, 1000, 3000],
             chunkSize,
             metadata: {
